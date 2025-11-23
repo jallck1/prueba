@@ -1,6 +1,14 @@
 from flask import Flask, render_template_string
+import os
+import logging
 
 app = Flask(__name__)
+
+# Configuración para producción
+if __name__ != '__main__':
+    gunicorn_logger = logging.getLogger('gunicorn.error')
+    app.logger.handlers = gunicorn_logger.handlers
+    app.logger.setLevel(gunicorn_logger.level)
 
 # HTML simple para la página principal
 HTML_TEMPLATE = """
@@ -57,4 +65,5 @@ def hola():
     return render_template_string(HTML_TEMPLATE, hora_actual=hora_formateada)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port, debug=False)
