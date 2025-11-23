@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: prueba-flask
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --timeout 120
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+    plan: free
