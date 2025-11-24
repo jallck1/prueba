@@ -2,7 +2,7 @@ services:
   - type: web
     name: prueba-flask
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install --upgrade pip && pip install python-dotenv==1.0.0 requests==2.31.0 PyPDF2==3.0.1 Flask==3.0.0 Werkzeug==3.0.1 gunicorn==21.2.0
     startCommand: gunicorn app:app --timeout 120
     envVars:
       - key: PYTHON_VERSION
