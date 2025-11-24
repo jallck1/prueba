@@ -49,9 +49,9 @@ os.makedirs('data', exist_ok=True)
 # Configuración básica completada
 print("Aplicación inicializada correctamente")
 
-# Configuración de OpenRouter
+# Configuración de OpenRouter (adaptado del ejemplo PyQt5)
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-MODEL_NAME = "x-ai/grok-4.1-fast:free"  # Grok 4.1 Fast - funciona perfectamente en local
+MODEL_NAME = "x-ai/grok-4.1-fast:free"
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Configuración de la base de datos
@@ -184,16 +184,14 @@ def chat():
         
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": os.getenv('OPENROUTER_HTTP_REFERER', 'https://prueba-7-tr52.onrender.com'),
-            "X-Title": "Asistente de PDF",
+            "Content-Type": "application/json"
         }
         
         data = {
             "model": MODEL_NAME,
             "messages": historial,
             "temperature": 0.7,
-            "max_tokens": 500
+            "max_tokens": 2000
         }
         
         print(f"Enviando petición a OpenRouter...")
