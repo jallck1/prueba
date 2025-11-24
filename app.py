@@ -11,7 +11,6 @@ try:
 except ImportError:
     print("python-dotenv no está disponible, usando variables de entorno del sistema")
 import requests
-from sentence_transformers import SentenceTransformer
 import PyPDF2
 import logging
 
@@ -30,10 +29,8 @@ logger = logging.getLogger(__name__)
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs('data', exist_ok=True)
 
-# Inicializar modelos
-print("Cargando modelo de embeddings...")
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-print("¡Modelo de embeddings cargado!")
+# Configuración básica completada
+print("Aplicación inicializada correctamente")
 
 # Configuración de OpenRouter
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
