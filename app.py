@@ -22,12 +22,16 @@ except ImportError:
 
 try:
     import PyPDF2
+    import fitz  # PyMuPDF
+    from PIL import Image
 except ImportError:
-    print("PyPDF2 no está disponible, instalando...")
+    print("PyPDF2, PyMuPDF o Pillow no están disponibles, instalando...")
     import subprocess
     import sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "PyPDF2==3.0.1"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "PyPDF2==3.0.1", "pymupdf==1.23.26", "Pillow==10.0.1"])
     import PyPDF2
+    import fitz
+    from PIL import Image
 
 import logging
 
@@ -200,8 +204,10 @@ def procesar_pdf_completo(pdf_id, ruta_archivo):
         # Extraer texto con PyPDF2
         with open(ruta_archivo, 'rb') as file:
             pdf_reader = PyPDF2.PdfReader(file)
+            total_pages = len(pdf_reader.pages)
             
-            for page_num in range(min(5, len(pdf_reader.pages))):  # Primeras 5 páginas
+            # Extraer texto de todas las páginas (máximo 20 para no sobrecargar)
+            for page_num in range(min(20, total_pages)):
                 page = pdf_reader.pages[page_num]
                 
                 # Extraer texto de la página
@@ -215,8 +221,37 @@ def procesar_pdf_completo(pdf_id, ruta_archivo):
                     
                     print(f"Página {page_num + 1}: {len(texto_pagina)} caracteres extraídos")
         
-        # Las imágenes ya están en la base de datos (creadas localmente)
-        # Solo usamos las que ya existen
+        # Extraer imágenes con PyMuPDF (todas las páginas)
+        try:
+            pdf_document = fitz.open(ruta_archivo)
+            
+            # Procesar todas las páginas (máximo 20)
+            for page_num in range(min(20, len(pdf_document))):
+                page = pdf_document[page_num]
+                
+                # Convertir página a imagen
+                mat = fitz.Matrix(2, 2)  # Escala 2x para mejor calidad
+                pix = page.get_pixmap(matrix=mat)
+                
+                # Guardar como PNG
+                image_name = f"page_{page_num + 1}.png"
+                image_path = os.path.join(images_dir, image_name)
+                pix.save(image_path)
+                
+                # Guardar referencia en base de datos
+                image_id = str(uuid.uuid4())
+                c.execute('''
+                    INSERT INTO pdf_images (id, pdf_id, page_number, image_name, image_path, image_description)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (image_id, pdf_id, page_num + 1, image_name, image_path, f"Página {page_num + 1} del PDF"))
+                
+                print(f"Imagen extraída: Página {page_num + 1} -> {image_name}")
+            
+            pdf_document.close()
+            
+        except Exception as img_error:
+            print(f"Error extrayendo imágenes: {img_error}")
+            # Continuar aunque falle la extracción de imágenes
         
         conn.commit()
         conn.close()
@@ -371,6 +406,20 @@ def chat():
         ultimo_mensaje = historial[-1]
         if ultimo_mensaje['role'] == 'user':
             ultimo_mensaje['content'] += contexto_pdf
+            
+        # Agregar instrucciones específicas para respuestas más directas
+        instrucciones = """
+INSTRUCCIONES IMPORTANTES:
+- Responde en lenguaje natural, como una conversación normal
+- NO uses emojis, asteriscos, negritas, o formato especial
+- NO uses listas con viñetas o numeración
+- Da respuestas DIRECTAS basadas SOLO en el contenido del PDF
+- NO mezcles información externa o de internet
+- Si hablas de páginas específicas, menciona el número de página claramente
+- Mantén las respuestas concisas y naturales
+- Habla como si fueras una persona explicando el contenido del documento"""
+        
+        ultimo_mensaje['content'] += instrucciones
     
     # Llamar a la API de OpenRouter
     try:

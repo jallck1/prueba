@@ -237,27 +237,41 @@
         
         function detectarPaginasEnRespuesta(respuesta) {
             const imagenes = [];
+            
+            // Patrones más amplios para detectar páginas
             const patrones = [
                 /página\s*(\d+)/gi,
                 /pág\.\s*(\d+)/gi,
-                /page\s*(\d+)/gi
+                /page\s*(\d+)/gi,
+                /págs?\.\s*(\d+)/gi,
+                /páginas?\s*(\d+)/gi,
+                /p\.\s*(\d+)/gi,
+                /\(pág\.\s*(\d+)\)/gi,
+                /\(página\s*(\d+)\)/gi
             ];
             
             const paginasEncontradas = new Set();
             
+            // Buscar números de página en la respuesta
             patrones.forEach(patron => {
                 let match;
                 while ((match = patron.exec(respuesta)) !== null) {
                     const numeroPagina = parseInt(match[1]);
-                    if (numeroPagina >= 1 && numeroPagina <= 5) { // Solo páginas 1-5
+                    if (numeroPagina >= 1 && numeroPagina <= 20) {
                         paginasEncontradas.add(numeroPagina);
                     }
                 }
             });
             
-            // Detectar palabras clave para página 1
-            if (/portada|primera\s+página/gi.test(respuesta)) {
+            // Detectar palabras clave específicas
+            if (/portada|primera\s+página|cover/gi.test(respuesta)) {
                 paginasEncontradas.add(1);
+            }
+            
+            // Si menciona "Valle del Cauca" o "turístico", mostrar páginas clave
+            if (/valle\s+del\s+cauca|turístico|ecoturismo/gi.test(respuesta)) {
+                // Agregar páginas relevantes automáticamente
+                [1, 2, 3, 4, 5, 6].forEach(p => paginasEncontradas.add(p));
             }
             
             // Buscar imágenes reales en la base de datos
