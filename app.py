@@ -22,12 +22,16 @@ except ImportError:
 
 try:
     import PyPDF2
+    from pdf2image import convert_from_path
+    from PIL import Image
 except ImportError:
-    print("PyPDF2 no está disponible, instalando...")
+    print("PyPDF2, pdf2image o Pillow no están disponibles, instalando...")
     import subprocess
     import sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "PyPDF2==3.0.1"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "PyPDF2==3.0.1", "pdf2image==1.16.3", "Pillow==10.0.1"])
     import PyPDF2
+    from pdf2image import convert_from_path
+    from PIL import Image
 
 import logging
 
@@ -123,12 +127,16 @@ def get_db():
     return conn
 
 def procesar_pdf_completo(pdf_id, ruta_archivo):
-    """Procesa un PDF extrayendo texto por páginas usando PyPDF2"""
+    """Procesa un PDF extrayendo texto e imágenes usando PyPDF2 y pdf2image"""
     try:
         conn = get_db()
         c = conn.cursor()
         
-        # Abrir PDF con PyPDF2 para extraer texto
+        # Crear directorio para imágenes del PDF
+        images_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'images', pdf_id)
+        os.makedirs(images_dir, exist_ok=True)
+        
+        # Extraer texto con PyPDF2
         with open(ruta_archivo, 'rb') as file:
             pdf_reader = PyPDF2.PdfReader(file)
             
@@ -144,8 +152,33 @@ def procesar_pdf_completo(pdf_id, ruta_archivo):
                         VALUES (?, ?, ?, ?)
                     ''', (content_id, pdf_id, page_num + 1, texto_pagina))
                     
-                    # Registrar que hay contenido en esta página (sin extraer imágenes por ahora)
                     print(f"Página {page_num + 1}: {len(texto_pagina)} caracteres extraídos")
+        
+        # Extraer imágenes con pdf2image (convertir páginas a imágenes)
+        try:
+            # Convertir primeras 3 páginas a imágenes
+            images = convert_from_path(ruta_archivo, first_page=1, last_page=3, dpi=150)
+            
+            for i, image in enumerate(images):
+                page_num = i + 1
+                image_name = f"page_{page_num}.png"
+                image_path = os.path.join(images_dir, image_name)
+                
+                # Guardar imagen
+                image.save(image_path, 'PNG')
+                
+                # Guardar referencia en base de datos
+                image_id = str(uuid.uuid4())
+                c.execute('''
+                    INSERT INTO pdf_images (id, pdf_id, page_number, image_name, image_path, image_description)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (image_id, pdf_id, page_num, image_name, image_path, f"Página {page_num} del PDF"))
+                
+                print(f"Imagen extraída: Página {page_num} -> {image_name}")
+                
+        except Exception as img_error:
+            print(f"Error extrayendo imágenes: {img_error}")
+            # Continuar aunque falle la extracción de imágenes
         
         conn.commit()
         conn.close()
@@ -400,6 +433,15 @@ def debug_pdfs():
         'imagenes': len(imagenes),
         'imagenes_detalle': imagenes
     })
+
+@app.route('/api/imagen/<pdf_id>/<image_name>')
+def servir_imagen(pdf_id, image_name):
+    """Servir imágenes extraídas de PDFs"""
+    try:
+        images_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'images', pdf_id)
+        return send_from_directory(images_dir, image_name)
+    except Exception as e:
+        return jsonify({'error': f'Imagen no encontrada: {str(e)}'}), 404
 
 if __name__ == '__main__':
     app.run(debug=True)
