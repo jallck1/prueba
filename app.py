@@ -5,14 +5,17 @@ import uuid
 from datetime import datetime
 from werkzeug.utils import secure_filename
 import json
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    print("python-dotenv no está disponible, usando variables de entorno del sistema")
 import requests
 from sentence_transformers import SentenceTransformer
 import PyPDF2
 import logging
 
 # Cargar variables de entorno
-load_dotenv()
 
 app = Flask(__name__, static_folder='static')
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/uploads')
