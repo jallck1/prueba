@@ -51,7 +51,7 @@ print("Aplicación inicializada correctamente")
 
 # Configuración de OpenRouter
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-MODEL_NAME = "qwen/qwen-2.5-72b-instruct:free"  # Qwen 2.5 72B - excelente para conversaciones
+MODEL_NAME = "x-ai/grok-4.1-fast:free"  # Grok 4.1 Fast - funciona perfectamente en local
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Configuración de la base de datos
