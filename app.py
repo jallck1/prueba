@@ -51,7 +51,7 @@ print("Aplicación inicializada correctamente")
 
 # Configuración de OpenRouter
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-MODEL_NAME = "meta-llama/llama-3.2-3b-instruct:free"  # Modelo gratuito más estable
+MODEL_NAME = "huggingface/zephyr-7b-beta:free"  # Modelo gratuito alternativo
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Configuración de la base de datos
