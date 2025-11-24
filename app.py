@@ -126,6 +126,71 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+def procesar_respuesta_con_imagenes(respuesta_grok, imagenes_pdfs):
+    """
+    Post-procesa la respuesta de Grok para insertar automáticamente 
+    las imágenes cuando menciona páginas específicas del PDF
+    """
+    import re
+    
+    if not imagenes_pdfs:
+        return respuesta_grok
+    
+    respuesta_final = respuesta_grok
+    
+    # Detectar menciones de páginas en la respuesta de Grok
+    patrones_pagina = [
+        r'[Pp]ágina\s*(\d+)',
+        r'[Pp]ág\.\s*(\d+)', 
+        r'[Pp]age\s*(\d+)',
+        r'[Pp]ortada',  # Para página 1
+        r'primera\s+página',  # Para página 1
+    ]
+    
+    # Crear un mapa de imágenes por página
+    imagenes_por_pagina = {}
+    for img in imagenes_pdfs:
+        if img['image_name'] and img['page_number']:
+            pagina = img['page_number']
+            imagen_url = f"https://prueba-7-tr52.onrender.com/api/imagen/{img['pdf_id']}/{img['image_name']}"
+            imagenes_por_pagina[pagina] = imagen_url
+    
+    # Buscar menciones de páginas y agregar imágenes
+    for patron in patrones_pagina:
+        matches = re.finditer(patron, respuesta_final, re.IGNORECASE)
+        
+        for match in matches:
+            if 'portada' in match.group().lower() or 'primera' in match.group().lower():
+                pagina_num = 1
+            else:
+                try:
+                    pagina_num = int(match.group(1))
+                except (IndexError, ValueError):
+                    continue
+            
+            # Si tenemos imagen para esta página, insertarla después de la mención
+            if pagina_num in imagenes_por_pagina:
+                imagen_url = imagenes_por_pagina[pagina_num]
+                imagen_markdown = f"\n\n![Página {pagina_num} del PDF]({imagen_url})\n\n"
+                
+                # Insertar la imagen después de la mención de la página
+                pos_final = match.end()
+                respuesta_final = (respuesta_final[:pos_final] + 
+                                 imagen_markdown + 
+                                 respuesta_final[pos_final:])
+                break  # Solo insertar una vez por página
+    
+    # Si la respuesta menciona "imágenes" o "mostrar" y no se insertó ninguna, agregar todas
+    if (('imagen' in respuesta_final.lower() or 'mostrar' in respuesta_final.lower() or 
+         'ver' in respuesta_final.lower()) and 
+        '![Página' not in respuesta_final):
+        
+        respuesta_final += "\n\n### 📄 **Páginas del PDF:**\n"
+        for pagina, imagen_url in sorted(imagenes_por_pagina.items()):
+            respuesta_final += f"\n![Página {pagina} del PDF]({imagen_url})\n"
+    
+    return respuesta_final
+
 def procesar_pdf_completo(pdf_id, ruta_archivo):
     """Procesa un PDF extrayendo texto e imágenes usando PyPDF2 y pdf2image"""
     try:
@@ -371,12 +436,15 @@ def chat():
                 print(f"Error al parsear JSON: {ve}")
                 respuesta_asistente = "Error al procesar la respuesta del asistente."
         
+        # Post-procesar respuesta para insertar imágenes automáticamente
+        respuesta_final = procesar_respuesta_con_imagenes(respuesta_asistente, imagenes_pdfs)
+        
         # Guardar respuesta del asistente
         id_respuesta = str(uuid.uuid4())
         c.execute('''
             INSERT INTO messages (id, session_id, role, content, created_at)
             VALUES (?, ?, ?, ?, ?)
-        ''', (id_respuesta, id_sesion, 'asistente', respuesta_asistente, datetime.now().isoformat()))
+        ''', (id_respuesta, id_sesion, 'asistente', respuesta_final, datetime.now().isoformat()))
         
         c.execute('''
             UPDATE chat_sessions
@@ -388,7 +456,7 @@ def chat():
         conn.close()
         
         return jsonify({
-            'respuesta': respuesta_asistente,
+            'respuesta': respuesta_final,
             'idSesion': id_sesion
         })
     except Exception as e:
