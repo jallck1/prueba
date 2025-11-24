@@ -51,7 +51,7 @@ print("Aplicación inicializada correctamente")
 
 # Configuración de OpenRouter
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-MODEL_NAME = "openai/gpt-3.5-turbo"
+MODEL_NAME = "microsoft/phi-3-mini-128k-instruct:free"  # Modelo gratuito
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Configuración de la base de datos
