@@ -22,14 +22,12 @@ except ImportError:
 
 try:
     import PyPDF2
-    import fitz  # PyMuPDF para extraer imágenes
 except ImportError:
-    print("PyPDF2 y PyMuPDF no están disponibles, instalando...")
+    print("PyPDF2 no está disponible, instalando...")
     import subprocess
     import sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "PyPDF2==3.0.1", "PyMuPDF==1.23.0"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "PyPDF2==3.0.1"])
     import PyPDF2
-    import fitz
 
 import logging
 
@@ -125,64 +123,37 @@ def get_db():
     return conn
 
 def procesar_pdf_completo(pdf_id, ruta_archivo):
-    """Procesa un PDF extrayendo texto e imágenes por separado"""
+    """Procesa un PDF extrayendo texto por páginas usando PyPDF2"""
     try:
         conn = get_db()
         c = conn.cursor()
         
-        # Crear directorio para imágenes del PDF
-        images_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'images', pdf_id)
-        os.makedirs(images_dir, exist_ok=True)
-        
-        # Abrir PDF con PyMuPDF para extraer imágenes
-        pdf_document = fitz.open(ruta_archivo)
-        
-        for page_num in range(min(5, len(pdf_document))):  # Primeras 5 páginas
-            page = pdf_document[page_num]
+        # Abrir PDF con PyPDF2 para extraer texto
+        with open(ruta_archivo, 'rb') as file:
+            pdf_reader = PyPDF2.PdfReader(file)
             
-            # Extraer texto de la página
-            texto_pagina = page.get_text()
-            if texto_pagina.strip():
-                content_id = str(uuid.uuid4())
-                c.execute('''
-                    INSERT INTO pdf_content (id, pdf_id, page_number, text_content)
-                    VALUES (?, ?, ?, ?)
-                ''', (content_id, pdf_id, page_num + 1, texto_pagina))
-            
-            # Extraer imágenes de la página
-            image_list = page.get_images()
-            for img_index, img in enumerate(image_list):
-                try:
-                    # Obtener la imagen
-                    xref = img[0]
-                    pix = fitz.Pixmap(pdf_document, xref)
+            for page_num in range(min(5, len(pdf_reader.pages))):  # Primeras 5 páginas
+                page = pdf_reader.pages[page_num]
+                
+                # Extraer texto de la página
+                texto_pagina = page.extract_text()
+                if texto_pagina.strip():
+                    content_id = str(uuid.uuid4())
+                    c.execute('''
+                        INSERT INTO pdf_content (id, pdf_id, page_number, text_content)
+                        VALUES (?, ?, ?, ?)
+                    ''', (content_id, pdf_id, page_num + 1, texto_pagina))
                     
-                    if pix.n - pix.alpha < 4:  # Solo imágenes RGB o escala de grises
-                        image_name = f"page_{page_num + 1}_img_{img_index + 1}.png"
-                        image_path = os.path.join(images_dir, image_name)
-                        
-                        # Guardar imagen
-                        pix.save(image_path)
-                        
-                        # Guardar referencia en base de datos
-                        image_id = str(uuid.uuid4())
-                        c.execute('''
-                            INSERT INTO pdf_images (id, pdf_id, page_number, image_name, image_path)
-                            VALUES (?, ?, ?, ?, ?)
-                        ''', (image_id, pdf_id, page_num + 1, image_name, image_path))
-                    
-                    pix = None
-                except Exception as e:
-                    print(f"Error procesando imagen {img_index} en página {page_num + 1}: {e}")
+                    # Registrar que hay contenido en esta página (sin extraer imágenes por ahora)
+                    print(f"Página {page_num + 1}: {len(texto_pagina)} caracteres extraídos")
         
-        pdf_document.close()
         conn.commit()
         conn.close()
         
         return True
         
     except Exception as e:
-        print(f"Error procesando PDF completo: {e}")
+        print(f"Error procesando PDF: {e}")
         return False
 
 @app.route('/')
@@ -276,28 +247,32 @@ def chat():
             role = 'assistant'
         historial.append({'role': role, 'content': fila['content']})
     
-    # Obtener contenido de PDFs disponibles para contexto
-    c.execute('SELECT filename, file_path FROM pdf_files ORDER BY uploaded_at DESC LIMIT 5')
-    pdfs_disponibles = c.fetchall()
+    # Obtener contenido de PDFs disponibles desde la base de datos
+    c.execute('''
+        SELECT pf.filename, pc.page_number, pc.text_content 
+        FROM pdf_files pf 
+        LEFT JOIN pdf_content pc ON pf.id = pc.pdf_id 
+        ORDER BY pf.uploaded_at DESC, pc.page_number ASC 
+        LIMIT 20
+    ''')
+    contenido_pdfs = c.fetchall()
     
     contexto_pdf = ""
-    if pdfs_disponibles:
-        contexto_pdf = "\n\nPDFs disponibles:\n"
-        for pdf in pdfs_disponibles:
-            try:
-                # Extraer texto del PDF
-                with open(pdf['file_path'], 'rb') as file:
-                    pdf_reader = PyPDF2.PdfReader(file)
-                    texto_pdf = ""
-                    for page in pdf_reader.pages[:5]:  # Primeras 5 páginas
-                        texto_pdf += page.extract_text() + "\n"
-                    
-                    if texto_pdf.strip():
-                        contexto_pdf += f"\n--- Contenido de {pdf['filename']} ---\n"
-                        contexto_pdf += texto_pdf[:2000] + "...\n"  # Primeros 2000 caracteres
-            except Exception as e:
-                print(f"Error leyendo PDF {pdf['filename']}: {e}")
-                contexto_pdf += f"\n--- {pdf['filename']} (error al leer) ---\n"
+    if contenido_pdfs:
+        contexto_pdf = "\n\nContenido de PDFs procesados:\n"
+        pdf_actual = None
+        
+        for fila in contenido_pdfs:
+            if fila['filename'] != pdf_actual:
+                pdf_actual = fila['filename']
+                contexto_pdf += f"\n--- {pdf_actual} ---\n"
+            
+            if fila['text_content']:
+                contexto_pdf += f"Página {fila['page_number']}: {fila['text_content'][:500]}...\n"
+        
+        # Limitar el contexto total
+        if len(contexto_pdf) > 3000:
+            contexto_pdf = contexto_pdf[:3000] + "...\n"
     
     # Agregar contexto del PDF al primer mensaje si hay PDFs
     if contexto_pdf and historial:
