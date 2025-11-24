@@ -174,7 +174,16 @@ def chat():
         ORDER BY created_at ASC
     ''', (id_sesion,))
     
-    historial = [{'role': fila['role'], 'content': fila['content']} for fila in c.fetchall()]
+    # Mapear roles para compatibilidad con Grok
+    historial = []
+    for fila in c.fetchall():
+        role = fila['role']
+        # Convertir roles a formato compatible con Grok
+        if role == 'usuario':
+            role = 'user'
+        elif role == 'asistente':
+            role = 'assistant'
+        historial.append({'role': role, 'content': fila['content']})
     
     # Llamar a la API de OpenRouter
     try:
