@@ -51,7 +51,7 @@ print("Aplicación inicializada correctamente")
 
 # Configuración de OpenRouter
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-MODEL_NAME = "deepseek/deepseek-r1:free"  # DeepSeek R1 - modelo de razonamiento avanzado
+MODEL_NAME = "mistralai/mistral-7b-instruct:free"  # Mistral 7B - muy estable y confiable
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Configuración de la base de datos
