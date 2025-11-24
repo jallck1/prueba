@@ -22,12 +22,14 @@ except ImportError:
 
 try:
     import PyPDF2
+    import fitz  # PyMuPDF para extraer imágenes
 except ImportError:
-    print("PyPDF2 no está disponible, instalando...")
+    print("PyPDF2 y PyMuPDF no están disponibles, instalando...")
     import subprocess
     import sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "PyPDF2==3.0.1"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "PyPDF2==3.0.1", "PyMuPDF==1.23.0"])
     import PyPDF2
+    import fitz
 
 import logging
 
@@ -69,6 +71,30 @@ def init_db():
     ''')
     
     c.execute('''
+        CREATE TABLE IF NOT EXISTS pdf_content (
+            id TEXT PRIMARY KEY,
+            pdf_id TEXT NOT NULL,
+            page_number INTEGER NOT NULL,
+            text_content TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (pdf_id) REFERENCES pdf_files(id) ON DELETE CASCADE
+        )
+    ''')
+    
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS pdf_images (
+            id TEXT PRIMARY KEY,
+            pdf_id TEXT NOT NULL,
+            page_number INTEGER NOT NULL,
+            image_name TEXT NOT NULL,
+            image_path TEXT NOT NULL,
+            image_description TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (pdf_id) REFERENCES pdf_files(id) ON DELETE CASCADE
+        )
+    ''')
+    
+    c.execute('''
         CREATE TABLE IF NOT EXISTS chat_sessions (
             id TEXT PRIMARY KEY,
             title TEXT,
@@ -97,6 +123,67 @@ def get_db():
     conn = sqlite3.connect('data/database.sqlite')
     conn.row_factory = sqlite3.Row
     return conn
+
+def procesar_pdf_completo(pdf_id, ruta_archivo):
+    """Procesa un PDF extrayendo texto e imágenes por separado"""
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        
+        # Crear directorio para imágenes del PDF
+        images_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'images', pdf_id)
+        os.makedirs(images_dir, exist_ok=True)
+        
+        # Abrir PDF con PyMuPDF para extraer imágenes
+        pdf_document = fitz.open(ruta_archivo)
+        
+        for page_num in range(min(5, len(pdf_document))):  # Primeras 5 páginas
+            page = pdf_document[page_num]
+            
+            # Extraer texto de la página
+            texto_pagina = page.get_text()
+            if texto_pagina.strip():
+                content_id = str(uuid.uuid4())
+                c.execute('''
+                    INSERT INTO pdf_content (id, pdf_id, page_number, text_content)
+                    VALUES (?, ?, ?, ?)
+                ''', (content_id, pdf_id, page_num + 1, texto_pagina))
+            
+            # Extraer imágenes de la página
+            image_list = page.get_images()
+            for img_index, img in enumerate(image_list):
+                try:
+                    # Obtener la imagen
+                    xref = img[0]
+                    pix = fitz.Pixmap(pdf_document, xref)
+                    
+                    if pix.n - pix.alpha < 4:  # Solo imágenes RGB o escala de grises
+                        image_name = f"page_{page_num + 1}_img_{img_index + 1}.png"
+                        image_path = os.path.join(images_dir, image_name)
+                        
+                        # Guardar imagen
+                        pix.save(image_path)
+                        
+                        # Guardar referencia en base de datos
+                        image_id = str(uuid.uuid4())
+                        c.execute('''
+                            INSERT INTO pdf_images (id, pdf_id, page_number, image_name, image_path)
+                            VALUES (?, ?, ?, ?, ?)
+                        ''', (image_id, pdf_id, page_num + 1, image_name, image_path))
+                    
+                    pix = None
+                except Exception as e:
+                    print(f"Error procesando imagen {img_index} en página {page_num + 1}: {e}")
+        
+        pdf_document.close()
+        conn.commit()
+        conn.close()
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error procesando PDF completo: {e}")
+        return False
 
 @app.route('/')
 def index():
@@ -131,10 +218,14 @@ def subir_pdf():
         conn.commit()
         conn.close()
         
+        # Procesar PDF para extraer texto e imágenes
+        procesado_exitoso = procesar_pdf_completo(pdf_id, ruta_archivo)
+        
         return jsonify({
             'exito': True,
             'pdfId': pdf_id,
-            'nombreArchivo': nombre_archivo
+            'nombreArchivo': nombre_archivo,
+            'procesado': procesado_exitoso
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
