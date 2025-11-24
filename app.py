@@ -10,8 +10,25 @@ try:
     load_dotenv()
 except ImportError:
     print("python-dotenv no está disponible, usando variables de entorno del sistema")
-import requests
-import PyPDF2
+
+try:
+    import requests
+except ImportError:
+    print("requests no está disponible, instalando...")
+    import subprocess
+    import sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "requests==2.31.0"])
+    import requests
+
+try:
+    import PyPDF2
+except ImportError:
+    print("PyPDF2 no está disponible, instalando...")
+    import subprocess
+    import sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "PyPDF2==3.0.1"])
+    import PyPDF2
+
 import logging
 
 # Cargar variables de entorno
