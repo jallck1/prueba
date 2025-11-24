@@ -219,6 +219,22 @@
             divMensajes.scrollTop = divMensajes.scrollHeight;
         }
         
+        // Variable global para almacenar imágenes disponibles
+        let imagenesDisponiblesGlobal = [];
+        
+        // Cargar imágenes disponibles al iniciar
+        function cargarImagenesDisponibles() {
+            fetch('/api/imagenes-disponibles')
+                .then(response => response.json())
+                .then(imagenes => {
+                    imagenesDisponiblesGlobal = imagenes;
+                    console.log('Imágenes disponibles cargadas:', imagenes);
+                })
+                .catch(error => {
+                    console.error('Error cargando imágenes:', error);
+                });
+        }
+        
         function detectarPaginasEnRespuesta(respuesta) {
             const imagenes = [];
             const patrones = [
@@ -244,22 +260,18 @@
                 paginasEncontradas.add(1);
             }
             
-            // Crear objetos de imagen para cada página encontrada
+            // Buscar imágenes reales en la base de datos
             paginasEncontradas.forEach(pagina => {
-                // Usar las imágenes que ya están en la base de datos
-                const imagenesDisponibles = [
-                    { id: '739388f3-8f1e-4166-8f1c-ca6ca2297a3f', paginas: [1, 2, 3] },
-                    { id: '61b91904-adda-44a5-9e2b-63332007c6b6', paginas: [1, 2, 3] }
-                ];
+                const imagenesEncontradas = imagenesDisponiblesGlobal.filter(img => 
+                    img.page_number === pagina
+                );
                 
-                imagenesDisponibles.forEach(pdf => {
-                    if (pdf.paginas.includes(pagina)) {
-                        imagenes.push({
-                            url: `https://prueba-7-tr52.onrender.com/api/imagen/${pdf.id}/page_${pagina}.png`,
-                            titulo: `Página ${pagina}`,
-                            descripcion: `Valle del Cauca - Pág. ${pagina}`
-                        });
-                    }
+                imagenesEncontradas.forEach(img => {
+                    imagenes.push({
+                        url: img.url,
+                        titulo: `Página ${img.page_number}`,
+                        descripcion: img.description || `${img.filename} - Pág. ${img.page_number}`
+                    });
                 });
             });
             
@@ -391,8 +403,11 @@
                 });
         }
 
-        // Cargar historial al cargar la página
-        window.onload = cargarHistorial;
+        // Cargar historial e imágenes al cargar la página
+        window.onload = function() {
+            cargarImagenesDisponibles();
+            cargarHistorial();
+        };
     </script>
 </body>
 </html>

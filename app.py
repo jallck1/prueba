@@ -504,5 +504,35 @@ def servir_imagen(pdf_id, image_name):
     except Exception as e:
         return jsonify({'error': f'Imagen no encontrada: {str(e)}'}), 404
 
+@app.route('/api/imagenes-disponibles', methods=['GET'])
+def imagenes_disponibles():
+    """Devolver lista de imágenes disponibles en la base de datos"""
+    conn = get_db()
+    c = conn.cursor()
+    
+    c.execute('''
+        SELECT pf.id as pdf_id, pf.filename, pi.page_number, pi.image_name, pi.image_description
+        FROM pdf_files pf 
+        INNER JOIN pdf_images pi ON pf.id = pi.pdf_id 
+        ORDER BY pf.uploaded_at DESC, pi.page_number ASC
+    ''')
+    imagenes = c.fetchall()
+    
+    conn.close()
+    
+    # Convertir a formato JSON amigable
+    resultado = []
+    for img in imagenes:
+        resultado.append({
+            'pdf_id': img['pdf_id'],
+            'filename': img['filename'],
+            'page_number': img['page_number'],
+            'image_name': img['image_name'],
+            'description': img['image_description'],
+            'url': f"/api/imagen/{img['pdf_id']}/{img['image_name']}"
+        })
+    
+    return jsonify(resultado)
+
 if __name__ == '__main__':
     app.run(debug=True)
