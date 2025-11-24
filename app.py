@@ -51,7 +51,7 @@ print("Aplicación inicializada correctamente")
 
 # Configuración de OpenRouter
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-MODEL_NAME = "microsoft/phi-3-mini-128k-instruct:free"  # Modelo gratuito
+MODEL_NAME = "meta-llama/llama-3.2-3b-instruct:free"  # Modelo gratuito más estable
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Configuración de la base de datos
@@ -178,10 +178,14 @@ def chat():
     
     # Llamar a la API de OpenRouter
     try:
+        print(f"API Key disponible: {bool(OPENROUTER_API_KEY)}")
+        print(f"Modelo: {MODEL_NAME}")
+        print(f"Historial: {historial}")
+        
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json",
-            "HTTP-Referer": os.getenv('OPENROUTER_HTTP_REFERER', 'http://localhost:5000'),
+            "HTTP-Referer": os.getenv('OPENROUTER_HTTP_REFERER', 'https://prueba-7-tr52.onrender.com'),
             "X-Title": "Asistente de PDF",
         }
         
@@ -189,20 +193,27 @@ def chat():
             "model": MODEL_NAME,
             "messages": historial,
             "temperature": 0.7,
-            "max_tokens": 1000
+            "max_tokens": 500
         }
         
+        print(f"Enviando petición a OpenRouter...")
         respuesta = requests.post(API_URL, headers=headers, json=data, timeout=30)
-        respuesta.raise_for_status()
+        print(f"Código de respuesta: {respuesta.status_code}")
         
-        try:
-            datos_respuesta = respuesta.json()
-            if 'choices' in datos_respuesta and len(datos_respuesta['choices']) > 0:
-                respuesta_asistente = datos_respuesta['choices'][0]['message']['content']
-            else:
-                respuesta_asistente = "No se pudo obtener una respuesta del asistente."
-        except ValueError:
-            respuesta_asistente = "Error al procesar la respuesta del asistente."
+        if respuesta.status_code != 200:
+            print(f"Error en API: {respuesta.text}")
+            respuesta_asistente = f"Error en la API: {respuesta.status_code} - {respuesta.text[:200]}"
+        else:
+            try:
+                datos_respuesta = respuesta.json()
+                print(f"Respuesta de API: {datos_respuesta}")
+                if 'choices' in datos_respuesta and len(datos_respuesta['choices']) > 0:
+                    respuesta_asistente = datos_respuesta['choices'][0]['message']['content']
+                else:
+                    respuesta_asistente = "No se pudo obtener una respuesta del asistente."
+            except ValueError as ve:
+                print(f"Error al parsear JSON: {ve}")
+                respuesta_asistente = "Error al procesar la respuesta del asistente."
         
         # Guardar respuesta del asistente
         id_respuesta = str(uuid.uuid4())
@@ -225,9 +236,10 @@ def chat():
             'idSesion': id_sesion
         })
     except Exception as e:
+        print(f"Error en chat: {str(e)}")
         if 'conn' in locals():
             conn.close()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'Error interno: {str(e)}'}), 500
 
 @app.route('/api/historial', methods=['GET'])
 def historial():
