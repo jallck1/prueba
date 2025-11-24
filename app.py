@@ -22,16 +22,14 @@ except ImportError:
 
 try:
     import PyPDF2
-    from pdf2image import convert_from_path
-    from PIL import Image
+    from wand.image import Image as WandImage
 except ImportError:
-    print("PyPDF2, pdf2image o Pillow no están disponibles, instalando...")
+    print("PyPDF2 o Wand no están disponibles, instalando...")
     import subprocess
     import sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "PyPDF2==3.0.1", "pdf2image==1.16.3", "Pillow==10.0.1"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "PyPDF2==3.0.1", "Wand==0.6.11"])
     import PyPDF2
-    from pdf2image import convert_from_path
-    from PIL import Image
+    from wand.image import Image as WandImage
 
 import logging
 
@@ -219,30 +217,31 @@ def procesar_pdf_completo(pdf_id, ruta_archivo):
                     
                     print(f"Página {page_num + 1}: {len(texto_pagina)} caracteres extraídos")
         
-        # Extraer imágenes con pdf2image (convertir páginas a imágenes)
+        # Extraer imágenes con Wand (convertir páginas a imágenes)
         try:
-            # Convertir primeras 3 páginas a imágenes
-            images = convert_from_path(ruta_archivo, first_page=1, last_page=3, dpi=150)
-            
-            for i, image in enumerate(images):
-                page_num = i + 1
-                image_name = f"page_{page_num}.png"
-                image_path = os.path.join(images_dir, image_name)
-                
-                # Guardar imagen
-                image.save(image_path, 'PNG')
-                
-                # Guardar referencia en base de datos
-                image_id = str(uuid.uuid4())
-                c.execute('''
-                    INSERT INTO pdf_images (id, pdf_id, page_number, image_name, image_path, image_description)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (image_id, pdf_id, page_num, image_name, image_path, f"Página {page_num} del PDF"))
-                
-                print(f"Imagen extraída: Página {page_num} -> {image_name}")
+            # Convertir primeras 3 páginas a imágenes usando Wand
+            with WandImage(filename=f"{ruta_archivo}[0-2]", resolution=150) as images:
+                for i, page in enumerate(images.sequence):
+                    page_num = i + 1
+                    image_name = f"page_{page_num}.png"
+                    image_path = os.path.join(images_dir, image_name)
+                    
+                    # Crear imagen individual de la página
+                    with WandImage(page) as single_page:
+                        single_page.format = 'png'
+                        single_page.save(filename=image_path)
+                    
+                    # Guardar referencia en base de datos
+                    image_id = str(uuid.uuid4())
+                    c.execute('''
+                        INSERT INTO pdf_images (id, pdf_id, page_number, image_name, image_path, image_description)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (image_id, pdf_id, page_num, image_name, image_path, f"Página {page_num} del PDF"))
+                    
+                    print(f"Imagen extraída: Página {page_num} -> {image_name}")
                 
         except Exception as img_error:
-            print(f"Error extrayendo imágenes: {img_error}")
+            print(f"Error extrayendo imágenes con Wand: {img_error}")
             # Continuar aunque falle la extracción de imágenes
         
         conn.commit()
