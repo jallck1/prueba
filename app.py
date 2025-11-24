@@ -51,7 +51,7 @@ print("Aplicación inicializada correctamente")
 
 # Configuración de OpenRouter
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-MODEL_NAME = "google/gemma-2-9b-it:free"  # Google Gemma gratuito y estable
+MODEL_NAME = "meta-llama/llama-3.2-3b-instruct:free"  # Llama 3.2 3B - estable y confiable
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Configuración de la base de datos
