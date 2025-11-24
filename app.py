@@ -282,13 +282,23 @@ def chat():
     
     # Obtener contenido de PDFs disponibles desde la base de datos
     c.execute('''
-        SELECT pf.filename, pc.page_number, pc.text_content 
+        SELECT pf.id as pdf_id, pf.filename, pc.page_number, pc.text_content 
         FROM pdf_files pf 
         LEFT JOIN pdf_content pc ON pf.id = pc.pdf_id 
         ORDER BY pf.uploaded_at DESC, pc.page_number ASC 
         LIMIT 20
     ''')
     contenido_pdfs = c.fetchall()
+    
+    # Obtener imágenes de PDFs disponibles
+    c.execute('''
+        SELECT pf.id as pdf_id, pf.filename, pi.page_number, pi.image_name, pi.image_description
+        FROM pdf_files pf 
+        LEFT JOIN pdf_images pi ON pf.id = pi.pdf_id 
+        ORDER BY pf.uploaded_at DESC, pi.page_number ASC 
+        LIMIT 10
+    ''')
+    imagenes_pdfs = c.fetchall()
     
     contexto_pdf = ""
     if contenido_pdfs:
@@ -303,9 +313,19 @@ def chat():
             if fila['text_content']:
                 contexto_pdf += f"Página {fila['page_number']}: {fila['text_content'][:500]}...\n"
         
+        # Agregar imágenes disponibles
+        if imagenes_pdfs:
+            contexto_pdf += "\n\nImágenes extraídas del PDF:\n"
+            for img in imagenes_pdfs:
+                if img['image_name']:
+                    # Crear URL para la imagen
+                    imagen_url = f"https://prueba-7-tr52.onrender.com/api/imagen/{img['pdf_id']}/{img['image_name']}"
+                    descripcion = img['image_description'] or f"Página {img['page_number']}"
+                    contexto_pdf += f"![{descripcion}]({imagen_url})\n"
+        
         # Limitar el contexto total
-        if len(contexto_pdf) > 3000:
-            contexto_pdf = contexto_pdf[:3000] + "...\n"
+        if len(contexto_pdf) > 4000:
+            contexto_pdf = contexto_pdf[:4000] + "...\n"
     
     # Agregar contexto del PDF al primer mensaje si hay PDFs
     if contexto_pdf and historial:
