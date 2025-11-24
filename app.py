@@ -185,6 +185,36 @@ def chat():
             role = 'assistant'
         historial.append({'role': role, 'content': fila['content']})
     
+    # Obtener contenido de PDFs disponibles para contexto
+    c.execute('SELECT filename, file_path FROM pdf_files ORDER BY uploaded_at DESC LIMIT 5')
+    pdfs_disponibles = c.fetchall()
+    
+    contexto_pdf = ""
+    if pdfs_disponibles:
+        contexto_pdf = "\n\nPDFs disponibles:\n"
+        for pdf in pdfs_disponibles:
+            try:
+                # Extraer texto del PDF
+                with open(pdf['file_path'], 'rb') as file:
+                    pdf_reader = PyPDF2.PdfReader(file)
+                    texto_pdf = ""
+                    for page in pdf_reader.pages[:5]:  # Primeras 5 páginas
+                        texto_pdf += page.extract_text() + "\n"
+                    
+                    if texto_pdf.strip():
+                        contexto_pdf += f"\n--- Contenido de {pdf['filename']} ---\n"
+                        contexto_pdf += texto_pdf[:2000] + "...\n"  # Primeros 2000 caracteres
+            except Exception as e:
+                print(f"Error leyendo PDF {pdf['filename']}: {e}")
+                contexto_pdf += f"\n--- {pdf['filename']} (error al leer) ---\n"
+    
+    # Agregar contexto del PDF al primer mensaje si hay PDFs
+    if contexto_pdf and historial:
+        # Modificar el último mensaje del usuario para incluir contexto
+        ultimo_mensaje = historial[-1]
+        if ultimo_mensaje['role'] == 'user':
+            ultimo_mensaje['content'] += contexto_pdf
+    
     # Llamar a la API de OpenRouter
     try:
         print(f"API Key disponible: {bool(OPENROUTER_API_KEY)}")
