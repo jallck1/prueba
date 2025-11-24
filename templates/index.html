@@ -115,6 +115,49 @@
             font-size: 14px;
             min-height: 20px;
         }
+        
+        /* Estilos para las tarjetas de imágenes */
+        .tarjetas-imagenes {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .tarjeta-imagen {
+            background: white;
+            border: 2px solid #4CAF50;
+            border-radius: 8px;
+            padding: 10px;
+            max-width: 200px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        
+        .tarjeta-imagen:hover {
+            transform: scale(1.05);
+        }
+        
+        .tarjeta-imagen img {
+            width: 100%;
+            height: auto;
+            border-radius: 4px;
+            margin-bottom: 5px;
+        }
+        
+        .tarjeta-imagen .titulo {
+            font-size: 12px;
+            font-weight: bold;
+            color: #2E7D32;
+            text-align: center;
+        }
+        
+        .tarjeta-imagen .descripcion {
+            font-size: 10px;
+            color: #666;
+            text-align: center;
+            margin-top: 3px;
+        }
     </style>
 </head>
 <body>
@@ -145,13 +188,82 @@
     <script>
         let idSesionActual = null;
 
-        function agregarMensaje(rol, contenido) {
+        function agregarMensaje(rol, contenido, imagenes = null) {
             const divMensajes = document.getElementById('mensajes');
             const divMensaje = document.createElement('div');
             divMensaje.className = `mensaje mensaje-${rol}`;
-            divMensaje.textContent = contenido;
+            divMensaje.innerHTML = contenido; // Usar innerHTML para soportar markdown
+            
+            // Si es un mensaje del asistente, agregar tarjetas de imágenes
+            if (rol === 'asistente' && imagenes && imagenes.length > 0) {
+                const divTarjetas = document.createElement('div');
+                divTarjetas.className = 'tarjetas-imagenes';
+                
+                imagenes.forEach(imagen => {
+                    const tarjeta = document.createElement('div');
+                    tarjeta.className = 'tarjeta-imagen';
+                    
+                    tarjeta.innerHTML = `
+                        <img src="${imagen.url}" alt="${imagen.descripcion}" onerror="this.style.display='none'">
+                        <div class="titulo">${imagen.titulo}</div>
+                        <div class="descripcion">${imagen.descripcion}</div>
+                    `;
+                    
+                    divTarjetas.appendChild(tarjeta);
+                });
+                
+                divMensaje.appendChild(divTarjetas);
+            }
+            
             divMensajes.appendChild(divMensaje);
             divMensajes.scrollTop = divMensajes.scrollHeight;
+        }
+        
+        function detectarPaginasEnRespuesta(respuesta) {
+            const imagenes = [];
+            const patrones = [
+                /página\s*(\d+)/gi,
+                /pág\.\s*(\d+)/gi,
+                /page\s*(\d+)/gi
+            ];
+            
+            const paginasEncontradas = new Set();
+            
+            patrones.forEach(patron => {
+                let match;
+                while ((match = patron.exec(respuesta)) !== null) {
+                    const numeroPagina = parseInt(match[1]);
+                    if (numeroPagina >= 1 && numeroPagina <= 5) { // Solo páginas 1-5
+                        paginasEncontradas.add(numeroPagina);
+                    }
+                }
+            });
+            
+            // Detectar palabras clave para página 1
+            if (/portada|primera\s+página/gi.test(respuesta)) {
+                paginasEncontradas.add(1);
+            }
+            
+            // Crear objetos de imagen para cada página encontrada
+            paginasEncontradas.forEach(pagina => {
+                // Usar las imágenes que ya están en la base de datos
+                const imagenesDisponibles = [
+                    { id: '739388f3-8f1e-4166-8f1c-ca6ca2297a3f', paginas: [1, 2, 3] },
+                    { id: '61b91904-adda-44a5-9e2b-63332007c6b6', paginas: [1, 2, 3] }
+                ];
+                
+                imagenesDisponibles.forEach(pdf => {
+                    if (pdf.paginas.includes(pagina)) {
+                        imagenes.push({
+                            url: `https://prueba-7-tr52.onrender.com/api/imagen/${pdf.id}/page_${pagina}.png`,
+                            titulo: `Página ${pagina}`,
+                            descripcion: `Valle del Cauca - Pág. ${pagina}`
+                        });
+                    }
+                });
+            });
+            
+            return imagenes;
         }
 
         function manejarTeclaEnter(evento) {
@@ -231,7 +343,12 @@
                     agregarMensaje('asistente', `Error: ${datos.error}`);
                 } else {
                     idSesionActual = datos.idSesion;
-                    agregarMensaje('asistente', datos.respuesta);
+                    
+                    // Detectar páginas mencionadas y crear tarjetas
+                    const imagenes = detectarPaginasEnRespuesta(datos.respuesta);
+                    
+                    // Agregar mensaje con tarjetas de imágenes
+                    agregarMensaje('asistente', datos.respuesta, imagenes);
                 }
             })
             .catch(error => {
@@ -260,10 +377,14 @@
                     divMensajes.innerHTML = '';
                     
                     datos.mensajes.forEach(mensaje => {
-                        const divMensaje = document.createElement('div');
-                        divMensaje.className = `mensaje mensaje-${mensaje.role}`;
-                        divMensaje.textContent = mensaje.content;
-                        divMensajes.appendChild(divMensaje);
+                        if (mensaje.role === 'asistente') {
+                            // Para mensajes del asistente, detectar páginas y agregar tarjetas
+                            const imagenes = detectarPaginasEnRespuesta(mensaje.content);
+                            agregarMensaje(mensaje.role, mensaje.content, imagenes);
+                        } else {
+                            // Para mensajes del usuario, agregar normalmente
+                            agregarMensaje(mensaje.role, mensaje.content);
+                        }
                     });
                     
                     divMensajes.scrollTop = divMensajes.scrollHeight;
