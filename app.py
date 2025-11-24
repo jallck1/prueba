@@ -367,5 +367,39 @@ def historial():
         conn.close()
         return jsonify({'sesiones': sesiones})
 
+@app.route('/api/debug-pdfs', methods=['GET'])
+def debug_pdfs():
+    """Ruta de debug para verificar PDFs procesados"""
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Verificar PDFs subidos
+    c.execute('SELECT * FROM pdf_files ORDER BY uploaded_at DESC')
+    pdfs = [dict(fila) for fila in c.fetchall()]
+    
+    # Verificar contenido procesado
+    c.execute('''
+        SELECT pf.filename, pc.page_number, LENGTH(pc.text_content) as text_length
+        FROM pdf_files pf 
+        LEFT JOIN pdf_content pc ON pf.id = pc.pdf_id 
+        ORDER BY pf.uploaded_at DESC, pc.page_number ASC
+    ''')
+    contenido = [dict(fila) for fila in c.fetchall()]
+    
+    # Verificar imágenes (si las hay)
+    c.execute('SELECT * FROM pdf_images ORDER BY created_at DESC')
+    imagenes = [dict(fila) for fila in c.fetchall()]
+    
+    conn.close()
+    
+    return jsonify({
+        'pdfs_subidos': len(pdfs),
+        'pdfs': pdfs,
+        'contenido_procesado': len(contenido),
+        'contenido': contenido,
+        'imagenes': len(imagenes),
+        'imagenes_detalle': imagenes
+    })
+
 if __name__ == '__main__':
     app.run(debug=True)
