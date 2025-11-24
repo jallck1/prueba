@@ -51,7 +51,7 @@ print("Aplicación inicializada correctamente")
 
 # Configuración de OpenRouter
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-MODEL_NAME = "huggingface/zephyr-7b-beta:free"  # Modelo gratuito alternativo
+MODEL_NAME = "x-ai/grok-beta:free"  # Grok versión gratuita
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Configuración de la base de datos
