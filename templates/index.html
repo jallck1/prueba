@@ -1,9 +1,14 @@
 <!DOCTYPE html>
+<!--[if lt IE 7]>      <html class="no-js lt-ie9 lt-ie8 lt-ie7"> <![endif]-->
+<!--[if IE 7]>         <html class="no-js lt-ie9 lt-ie8"> <![endif]-->
+<!--[if IE 8]>         <html class="no-js lt-ie9"> <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js"> <!--<![endif]-->
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Asistente de PDF</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -64,9 +69,51 @@
         .area-carga {
             margin-bottom: 20px;
             padding: 20px;
-            border: 2px dashed #ccc;
-            border-radius: 5px;
+            border: 2px dashed #4CAF50;
+            border-radius: 10px;
             text-align: center;
+            background-color: rgba(76, 175, 80, 0.1);
+        }
+        
+        .area-carga h3 {
+            margin-top: 0;
+            color: #2E7D32;
+        }
+        
+        .area-carga form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .area-carga input[type="file"] {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #4CAF50;
+            border-radius: 5px;
+            background-color: white;
+        }
+        
+        .area-carga button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        
+        .area-carga button:hover {
+            background-color: #45a049;
+        }
+        
+        #upload-status {
+            margin-top: 10px;
+            font-size: 14px;
+            min-height: 20px;
         }
     </style>
 </head>
@@ -76,8 +123,11 @@
         
         <div class="area-carga">
             <h3>Subir PDF</h3>
-            <input type="file" id="cargar-pdf" accept=".pdf">
-            <button onclick="subirPDF()">Subir PDF</button>
+            <form id="upload-form" onsubmit="event.preventDefault(); subirPDF();">
+                <input type="file" id="cargar-pdf" accept=".pdf" required>
+                <button type="submit">Subir PDF</button>
+                <div id="upload-status"></div>
+            </form>
         </div>
 
         <div class="mensajes" id="mensajes">
@@ -113,30 +163,46 @@
         function subirPDF() {
             const entradaArchivo = document.getElementById('cargar-pdf');
             const archivo = entradaArchivo.files[0];
+            const uploadStatus = document.getElementById('upload-status');
             
             if (!archivo) {
-                alert('Por favor selecciona un archivo PDF');
+                uploadStatus.textContent = 'Por favor selecciona un archivo PDF';
+                uploadStatus.style.color = 'red';
                 return;
             }
 
             const formData = new FormData();
             formData.append('archivo', archivo);
+            
+            uploadStatus.textContent = 'Subiendo archivo...';
+            uploadStatus.style.color = 'blue';
 
             fetch('/api/subir-pdf', {
                 method: 'POST',
                 body: formData
             })
-            .then(respuesta => respuesta.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Error en la respuesta del servidor');
+                }
+                return response.json();
+            })
             .then(datos => {
                 if (datos.exito) {
+                    uploadStatus.textContent = '¡Archivo subido con éxito!';
+                    uploadStatus.style.color = 'green';
                     agregarMensaje('asistente', `PDF "${datos.nombreArchivo}" cargado correctamente. Puedes hacerme preguntas sobre él.`);
+                    // Reset the form
+                    document.getElementById('upload-form').reset();
                 } else {
-                    agregarMensaje('asistente', `Error al cargar el PDF: ${datos.error}`);
+                    throw new Error(datos.error || 'Error desconocido al subir el archivo');
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                agregarMensaje('asistente', 'Error al cargar el archivo');
+                uploadStatus.textContent = `Error: ${error.message}`;
+                uploadStatus.style.color = 'red';
+                agregarMensaje('asistente', `Error al cargar el archivo: ${error.message}`);
             });
         }
 

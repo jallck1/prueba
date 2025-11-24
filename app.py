@@ -1,266 +1,239 @@
-from flask import Flask, render_template_string, request
+from flask import Flask, render_template, request, jsonify, send_from_directory
 import os
+import sqlite3
+import uuid
 from datetime import datetime
+from werkzeug.utils import secure_filename
+import json
+from dotenv import load_dotenv
+import requests
+from sentence_transformers import SentenceTransformer
+import PyPDF2
+import logging
 
-app = Flask(__name__)
+# Cargar variables de entorno
+load_dotenv()
 
-# Respuestas del bot
-RESPUESTAS = {
-    "hola": "¡Hola! Soy tu asistente virtual. ¿En qué puedo ayudarte hoy?",
-    "cómo estás": "¡Estoy funcionando al 100%! ¿Y tú, cómo estás?",
-    "qué puedes hacer": "Puedo responder preguntas básicas, contar chistes, o simplemente charlar contigo.",
-    "adiós": "¡Hasta luego! Fue un placer ayudarte.",
-    "gracias": "¡De nada! Estoy aquí para ayudarte cuando lo necesites."
-}
+app = Flask(__name__, static_folder='static')
+app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data/uploads')
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB máximo
+app.secret_key = os.urandom(24)
 
-# Plantilla HTML con el diseño del chat
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ChatBot Futurista</title>
-    <style>
-        :root {
-            --primary: #00ff9d;
-            --secondary: #1a1a2e;
-            --accent: #7f5af0;
-            --text: #e6f1ff;
-            --bg: #0f0f1a;
-        }
-        
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        
-        body {
-            background-color: var(--bg);
-            color: var(--text);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: rgba(26, 26, 46, 0.5);
-            border-radius: 15px;
-            overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-        }
-        
-        header {
-            background: linear-gradient(45deg, var(--accent), #a78bfa);
-            padding: 20px;
-            text-align: center;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        
-        h1 {
-            color: white;
-            font-size: 1.8em;
-            margin-bottom: 5px;
-            text-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-        }
-        
-        .subtitle {
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 0.9em;
-        }
-        
-        .chat-container {
-            padding: 20px;
-            height: 60vh;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-        
-        .message {
-            max-width: 80%;
-            padding: 12px 18px;
-            border-radius: 20px;
-            position: relative;
-            animation: fadeIn 0.3s ease-out;
-            line-height: 1.5;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .bot-message {
-            align-self: flex-start;
-            background: rgba(127, 90, 240, 0.2);
-            border-bottom-left-radius: 5px;
-            color: var(--text);
-            border: 1px solid var(--accent);
-        }
-        
-        .user-message {
-            align-self: flex-end;
-            background: rgba(0, 255, 157, 0.1);
-            border-bottom-right-radius: 5px;
-            color: var(--primary);
-            border: 1px solid var(--primary);
-        }
-        
-        .message-time {
-            font-size: 0.7em;
-            opacity: 0.6;
-            margin-top: 5px;
-            text-align: right;
-        }
-        
-        .input-container {
-            display: flex;
-            padding: 15px;
-            background: rgba(15, 15, 26, 0.8);
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        
-        form {
-            display: flex;
-            width: 100%;
-            gap: 10px;
-        }
-        
-        input[type="text"] {
-            flex: 1;
-            padding: 12px 20px;
-            border: none;
-            border-radius: 30px;
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text);
-            font-size: 1em;
-            outline: none;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            transition: all 0.3s ease;
-        }
-        
-        input[type="text"]:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 15px rgba(0, 255, 157, 0.2);
-        }
-        
-        button {
-            background: linear-gradient(45deg, var(--accent), #a78bfa);
-            border: none;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            color: white;
-            font-size: 1.2em;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s ease;
-            box-shadow: 0 5px 15px rgba(127, 90, 240, 0.3);
-        }
-        
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 7px 20px rgba(127, 90, 240, 0.4);
-        }
-        
-        .suggestions {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            padding: 0 15px 15px;
-            background: rgba(15, 15, 26, 0.8);
-        }
-        
-        .suggestion {
-            background: rgba(127, 90, 240, 0.1);
-            border: 1px solid var(--accent);
-            color: var(--accent);
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-size: 0.9em;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        
-        .suggestion:hover {
-            background: var(--accent);
-            color: white;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>Asistente Virtual</h1>
-            <div class="subtitle">Estoy aquí para ayudarte</div>
-        </header>
-        
-        <div class="chat-container">
-            <div class="message bot-message">
-                ¡Hola! Soy tu asistente virtual. ¿En qué puedo ayudarte hoy?
-                <div class="message-time">Ahora</div>
-            </div>
-            
-            {% if user_message %}
-                <div class="message user-message">
-                    {{ user_message }}
-                    <div class="message-time">Tú - {{ time }}</div>
-                </div>
-                
-                <div class="message bot-message">
-                    {{ bot_response }}
-                    <div class="message-time">Asistente - {{ time }}</div>
-                </div>
-            {% endif %}
-        </div>
-        
-        <div class="suggestions">
-            <a href="/chat?q=¿Cómo estás?" class="suggestion">¿Cómo estás?</a>
-            <a href="/chat?q=¿Qué puedes hacer?" class="suggestion">¿Qué puedes hacer?</a>
-            <a href="/chat?q=Gracias" class="suggestion">Gracias</a>
-        </div>
-        
-        <div class="input-container">
-            <form method="POST" action="/chat">
-                <input type="text" name="user_message" placeholder="Escribe tu mensaje..." required>
-                <button type="submit">→</button>
-            </form>
-        </div>
-    </div>
-</body>
-</html>
-"""
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Crear directorios necesarios
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs('data', exist_ok=True)
+
+# Inicializar modelos
+print("Cargando modelo de embeddings...")
+embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+print("¡Modelo de embeddings cargado!")
+
+# Configuración de OpenRouter
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+MODEL_NAME = "openai/gpt-3.5-turbo"
+API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# Configuración de la base de datos
+def init_db():
+    conn = sqlite3.connect('data/database.sqlite')
+    c = conn.cursor()
+    
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS pdf_files (
+            id TEXT PRIMARY KEY,
+            filename TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS chat_sessions (
+            id TEXT PRIMARY KEY,
+            title TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS messages (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def get_db():
+    conn = sqlite3.connect('data/database.sqlite')
+    conn.row_factory = sqlite3.Row
+    return conn
 
 @app.route('/')
-def home():
-    return chat()
+def index():
+    return render_template('index.html')
 
-@app.route('/chat', methods=['GET', 'POST'])
+@app.route('/api/subir-pdf', methods=['POST'])
+def subir_pdf():
+    if 'archivo' not in request.files:
+        return jsonify({'error': 'No se proporcionó ningún archivo'}), 400
+    
+    archivo = request.files['archivo']
+    if archivo.filename == '':
+        return jsonify({'error': 'No se seleccionó ningún archivo'}), 400
+    
+    if not archivo.filename.endswith('.pdf'):
+        return jsonify({'error': 'El archivo debe ser un PDF'}), 400
+    
+    pdf_id = str(uuid.uuid4())
+    nombre_archivo = secure_filename(archivo.filename)
+    ruta_archivo = os.path.join(app.config['UPLOAD_FOLDER'], f'{pdf_id}_{nombre_archivo}')
+    archivo.save(ruta_archivo)
+    
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        
+        c.execute('''
+            INSERT INTO pdf_files (id, filename, file_path)
+            VALUES (?, ?, ?)
+        ''', (pdf_id, nombre_archivo, ruta_archivo))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'exito': True,
+            'pdfId': pdf_id,
+            'nombreArchivo': nombre_archivo
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/chat', methods=['POST'])
 def chat():
-    if request.method == 'POST':
-        user_message = request.form.get('user_message', '').lower()
-    elif request.method == 'GET' and 'q' in request.args:
-        user_message = request.args.get('q', '').lower()
+    datos = request.json
+    mensaje = datos.get('mensaje')
+    id_sesion = datos.get('idSesion')
+    
+    if not mensaje:
+        return jsonify({'error': 'Se requiere un mensaje'}), 400
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Crear sesión si no existe
+    if not id_sesion:
+        id_sesion = str(uuid.uuid4())
+        c.execute('''
+            INSERT INTO chat_sessions (id, title, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+        ''', (id_sesion, mensaje[:50], datetime.now().isoformat(), datetime.now().isoformat()))
+    
+    # Guardar mensaje del usuario
+    id_mensaje = str(uuid.uuid4())
+    c.execute('''
+        INSERT INTO messages (id, session_id, role, content, created_at)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (id_mensaje, id_sesion, 'usuario', mensaje, datetime.now().isoformat()))
+    
+    # Obtener historial de la conversación
+    c.execute('''
+        SELECT role, content
+        FROM messages
+        WHERE session_id = ?
+        ORDER BY created_at ASC
+    ''', (id_sesion,))
+    
+    historial = [{'role': fila['role'], 'content': fila['content']} for fila in c.fetchall()]
+    
+    # Llamar a la API de OpenRouter
+    try:
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": os.getenv('OPENROUTER_HTTP_REFERER', 'http://localhost:5000'),
+            "X-Title": "Asistente de PDF",
+        }
+        
+        data = {
+            "model": MODEL_NAME,
+            "messages": historial,
+            "temperature": 0.7,
+            "max_tokens": 1000
+        }
+        
+        respuesta = requests.post(API_URL, headers=headers, json=data, timeout=30)
+        respuesta.raise_for_status()
+        
+        try:
+            datos_respuesta = respuesta.json()
+            if 'choices' in datos_respuesta and len(datos_respuesta['choices']) > 0:
+                respuesta_asistente = datos_respuesta['choices'][0]['message']['content']
+            else:
+                respuesta_asistente = "No se pudo obtener una respuesta del asistente."
+        except ValueError:
+            respuesta_asistente = "Error al procesar la respuesta del asistente."
+        
+        # Guardar respuesta del asistente
+        id_respuesta = str(uuid.uuid4())
+        c.execute('''
+            INSERT INTO messages (id, session_id, role, content, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (id_respuesta, id_sesion, 'asistente', respuesta_asistente, datetime.now().isoformat()))
+        
+        c.execute('''
+            UPDATE chat_sessions
+            SET updated_at = ?
+            WHERE id = ?
+        ''', (datetime.now().isoformat(), id_sesion))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'respuesta': respuesta_asistente,
+            'idSesion': id_sesion
+        })
+    except Exception as e:
+        if 'conn' in locals():
+            conn.close()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/historial', methods=['GET'])
+def historial():
+    id_sesion = request.args.get('idSesion')
+    conn = get_db()
+    c = conn.cursor()
+    
+    if id_sesion:
+        c.execute('''
+            SELECT id, role, content, created_at
+            FROM messages
+            WHERE session_id = ?
+            ORDER BY created_at ASC
+        ''', (id_sesion,))
+        
+        mensajes = [dict(fila) for fila in c.fetchall()]
+        conn.close()
+        return jsonify({'mensajes': mensajes})
     else:
-        return render_template_string(HTML_TEMPLATE)
-    
-    bot_response = RESPUESTAS.get(user_message, "Lo siento, no entiendo esa pregunta. ¿Podrías reformularla?")
-    time = datetime.now().strftime("%H:%M")
-    
-    return render_template_string(HTML_TEMPLATE, 
-                               user_message=user_message,
-                               bot_response=bot_response,
-                               time=time)
+        c.execute('SELECT id, title, created_at, updated_at FROM chat_sessions ORDER BY updated_at DESC')
+        sesiones = [dict(fila) for fila in c.fetchall()]
+        conn.close()
+        return jsonify({'sesiones': sesiones})
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(debug=True)
