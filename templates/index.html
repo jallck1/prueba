@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asistente de PDF</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .contenedor-chat {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .mensajes {
+            height: 500px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .mensaje {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 80%;
+        }
+        .mensaje-usuario {
+            background-color: #e3f2fd;
+            margin-left: auto;
+        }
+        .mensaje-asistente {
+            background-color: #f1f1f1;
+            margin-right: auto;
+        }
+        .area-entrada {
+            display: flex;
+            gap: 10px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .area-carga {
+            margin-bottom: 20px;
+            padding: 20px;
+            border: 2px dashed #ccc;
+            border-radius: 5px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="contenedor-chat">
+        <h1>Asistente de PDF</h1>
+        
+        <div class="area-carga">
+            <h3>Subir PDF</h3>
+            <input type="file" id="cargar-pdf" accept=".pdf">
+            <button onclick="subirPDF()">Subir PDF</button>
+        </div>
+
+        <div class="mensajes" id="mensajes">
+            <div class="mensaje mensaje-asistente">
+                ¡Hola! Soy tu asistente de PDF. ¿En qué puedo ayudarte hoy?
+            </div>
+        </div>
+
+        <div class="area-entrada">
+            <input type="text" id="entrada-usuario" placeholder="Escribe tu mensaje..." onkeypress="manejarTeclaEnter(event)">
+            <button onclick="enviarMensaje()">Enviar</button>
+        </div>
+    </div>
+
+    <script>
+        let idSesionActual = null;
+
+        function agregarMensaje(rol, contenido) {
+            const divMensajes = document.getElementById('mensajes');
+            const divMensaje = document.createElement('div');
+            divMensaje.className = `mensaje mensaje-${rol}`;
+            divMensaje.textContent = contenido;
+            divMensajes.appendChild(divMensaje);
+            divMensajes.scrollTop = divMensajes.scrollHeight;
+        }
+
+        function manejarTeclaEnter(evento) {
+            if (evento.key === 'Enter') {
+                enviarMensaje();
+            }
+        }
+
+        function subirPDF() {
+            const entradaArchivo = document.getElementById('cargar-pdf');
+            const archivo = entradaArchivo.files[0];
+            
+            if (!archivo) {
+                alert('Por favor selecciona un archivo PDF');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('archivo', archivo);
+
+            fetch('/api/subir-pdf', {
+                method: 'POST',
+                body: formData
+            })
+            .then(respuesta => respuesta.json())
+            .then(datos => {
+                if (datos.exito) {
+                    agregarMensaje('asistente', `PDF "${datos.nombreArchivo}" cargado correctamente. Puedes hacerme preguntas sobre él.`);
+                } else {
+                    agregarMensaje('asistente', `Error al cargar el PDF: ${datos.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                agregarMensaje('asistente', 'Error al cargar el archivo');
+            });
+        }
+
+        function enviarMensaje() {
+            const entrada = document.getElementById('entrada-usuario');
+            const mensaje = entrada.value.trim();
+            
+            if (!mensaje) return;
+
+            agregarMensaje('usuario', mensaje);
+            entrada.value = '';
+
+            fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    mensaje: mensaje,
+                    idSesion: idSesionActual
+                })
+            })
+            .then(respuesta => respuesta.json())
+            .then(datos => {
+                if (datos.error) {
+                    agregarMensaje('asistente', `Error: ${datos.error}`);
+                } else {
+                    idSesionActual = datos.idSesion;
+                    agregarMensaje('asistente', datos.respuesta);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                agregarMensaje('asistente', 'Error al procesar tu mensaje');
+            });
+        }
+
+        // Cargar historial al iniciar
+        function cargarHistorial() {
+            fetch('/api/historial')
+                .then(respuesta => respuesta.json())
+                .then(datos => {
+                    if (datos.sesiones && datos.sesiones.length > 0) {
+                        idSesionActual = datos.sesiones[0].id;
+                        cargarMensajes(idSesionActual);
+                    }
+                });
+        }
+
+        function cargarMensajes(idSesion) {
+            fetch(`/api/historial?idSesion=${idSesion}`)
+                .then(respuesta => respuesta.json())
+                .then(datos => {
+                    const divMensajes = document.getElementById('mensajes');
+                    divMensajes.innerHTML = '';
+                    
+                    datos.mensajes.forEach(mensaje => {
+                        const divMensaje = document.createElement('div');
+                        divMensaje.className = `mensaje mensaje-${mensaje.role}`;
+                        divMensaje.textContent = mensaje.content;
+                        divMensajes.appendChild(divMensaje);
+                    });
+                    
+                    divMensajes.scrollTop = divMensajes.scrollHeight;
+                });
+        }
+
+        // Cargar historial al cargar la página
+        window.onload = cargarHistorial;
+    </script>
+</body>
+</html>
